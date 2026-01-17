@@ -172,7 +172,12 @@ def compute_fid(
     device: str = "cpu",
     batch_size: int = 64
 ) -> float:
-    """Compute Frechet Inception Distance (FID) score for MNIST.
+    """
+    Paper Table 1: "On the unconditional CIFAR10 dataset, we obtain an Inception
+    score of 9.46 and a state-of-the-art FID score of 3.17."
+    
+    Paper Section 4.1: "With our FID score of 3.17, our unconditional model achieves
+    better sample quality than most models in the literature, including class conditional models."
     
     FID measures the distance between the distribution of generated samples and real data.
     Lower is better: 0 = perfect, higher = worse quality.

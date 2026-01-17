@@ -134,11 +134,6 @@ def get_mnist_dataloader(
     data_dir: str = "./data",
     use_flip: bool = False
 ) -> DataLoader:
-    """Get MNIST dataloader with optional data augmentation.
-    
-    Note: Horizontal flips disabled by default for MNIST since flipping
-    creates invalid digits (6↔9, etc.). The paper used flips for natural images.
-    """
     transforms_list = [transforms.ToTensor()]
     if use_flip:
         transforms_list.insert(0, transforms.RandomHorizontalFlip(p=0.5))

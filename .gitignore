@@ -18,6 +18,7 @@ generated/
 *.pth
 *.gif
 *.png
+*.txt
 ddpm_*
 
 test/
