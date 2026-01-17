@@ -16,5 +16,8 @@ data/
 generated/
 
 *.pth
+*.gif
+*.png
+ddpm_*
 
 test/
