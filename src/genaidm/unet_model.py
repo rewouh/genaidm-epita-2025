@@ -7,6 +7,10 @@ logger = logging.getLogger(__name__)
 
 
 class SinusoidalPositionEmbeddings(nn.Module):
+    """
+    Paper Appendix B: "Diffusion time t is specified by adding the Transformer
+    sinusoidal position embedding into each residual block."
+    """
     
     def __init__(self, dim: int):
         super().__init__()
@@ -23,6 +27,13 @@ class SinusoidalPositionEmbeddings(nn.Module):
 
 
 class DownBlock(nn.Module):
+    """
+    Paper Appendix B: "All models have two convolutional residual blocks per
+    resolution level"
+    
+    Paper Appendix B: "We replaced weight normalization with group normalization
+    to make the implementation simpler."
+    """
     
     def __init__(self, in_channels: int, out_channels: int, time_emb_dim: int):
         super().__init__()
@@ -87,17 +98,31 @@ class UpBlock(nn.Module):
 
 
 class SimpleUNet(nn.Module):
+    """
+    Paper Section 4: "To represent the reverse process, we use a U-Net backbone
+    similar to an unmasked PixelCNN++ with group normalization throughout."
+    
+    Paper Appendix B: "Our neural network architecture follows the backbone of
+    PixelCNN++, which is a U-Net based on a Wide ResNet. We replaced weight
+    normalization with group normalization to make the implementation simpler."
+    
+    Paper Appendix B: "Parameters are shared across time, which is specified to
+    the network using the Transformer sinusoidal position embedding."
+    """
     
     def __init__(
         self,
         image_channels: int = 1,
         base_channels: int = 64,
-        time_emb_dim: int = 128
+        time_emb_dim: int = 128,
+        dropout: float = 0.1
     ):
         super().__init__()
         
         self.image_channels = image_channels
         self.time_emb_dim = time_emb_dim
+        
+        self.dropout = nn.Dropout(dropout)
         
         self.time_mlp = nn.Sequential(
             SinusoidalPositionEmbeddings(time_emb_dim),
@@ -125,9 +150,21 @@ class SimpleUNet(nn.Module):
         self.conv_out = nn.Conv2d(base_channels, image_channels, 1)
     
     def forward(self, x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+        """
+        Paper Section 3.2: "We propose a specific parameterization motivated by [...] analysis"
+        The model predicts the noise ε that was added to x_0 to get x_t.
+        
+        Paper Eq. (12): The objective "resembles denoising score matching over multiple
+        noise scales indexed by t"
+        
+        Paper Section 3.2: "Optimizing an objective resembling denoising score matching
+        is equivalent to using variational inference to fit the finite-time marginal of
+        a sampling chain resembling Langevin dynamics."
+        """
         time_emb = self.time_mlp(t)
         
         x1 = self.conv_in(x)
+        x1 = self.dropout(x1)
         
         x2 = self.down1(x1, time_emb)
         x2_pool = self.pool1(x2)
@@ -136,6 +173,7 @@ class SimpleUNet(nn.Module):
         x3_pool = self.pool2(x3)
         
         x4 = self.bottleneck(x3_pool, time_emb)
+        x4 = self.dropout(x4)
         
         x_up1 = self.up1(x4)
         x_up1 = torch.cat([x_up1, x3], dim=1)

@@ -172,6 +172,13 @@ def compute_fid(
     device: str = "cpu",
     batch_size: int = 64
 ) -> float:
+    """Compute Frechet Inception Distance (FID) score for MNIST.
+    
+    FID measures the distance between the distribution of generated samples and real data.
+    Lower is better: 0 = perfect, higher = worse quality.
+    
+    Good MNIST FID scores are typically in the range of 5-20.
+    """
     logger.info("computing fid")
     
     logger.info("extracting features from real images")

@@ -14,6 +14,11 @@ def visualize_forward_trajectory(
     num_steps_to_show: int = 10,
     figsize: tuple = (15, 3)
 ):
+    """
+    Paper Eq. (2): "The approximate posterior q(x_{1:T}|x_0), called the forward
+    process or diffusion process, is fixed to a Markov chain that gradually adds
+    Gaussian noise to the data according to a variance schedule β_1, ..., β_T"
+    """
     num_timesteps = trajectory.shape[0]
     indices = np.linspace(0, num_timesteps - 1, num_steps_to_show, dtype=int)
     
@@ -35,7 +40,7 @@ def visualize_forward_trajectory(
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
         logger.info(f"forward trajectory saved: {save_path}")
     
-    plt.show()
+    plt.close()
 
 
 def visualize_reverse_trajectory(
@@ -44,6 +49,16 @@ def visualize_reverse_trajectory(
     num_steps_to_show: int = 10,
     figsize: tuple = (15, 3)
 ):
+    """
+    Paper Section 2: "Transitions of this chain are learned to reverse a diffusion
+    process, which is a Markov chain that gradually adds noise to the data in the
+    opposite direction of sampling until signal is destroyed."
+    
+    Paper Section 3.2: "The complete sampling procedure, Algorithm 2, resembles
+    Langevin dynamics with ε_θ as a learned gradient of the data density."
+    
+    Paper Section 4.3: "Large scale image features appear first and details appear last."
+    """
     num_timesteps = trajectory.shape[0]
     indices = np.linspace(0, num_timesteps - 1, num_steps_to_show, dtype=int)
     
@@ -66,7 +81,7 @@ def visualize_reverse_trajectory(
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
         logger.info(f"reverse trajectory saved: {save_path}")
     
-    plt.show()
+    plt.close()
 
 
 def visualize_generated_samples(
@@ -98,7 +113,7 @@ def visualize_generated_samples(
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
         logger.info(f"samples saved: {save_path}")
     
-    plt.show()
+    plt.close()
 
 
 def compare_timesteps(
@@ -108,6 +123,14 @@ def compare_timesteps(
     num_samples_per_config: int = 8,
     figsize: tuple = (15, 10)
 ):
+    """
+    Paper Section 4.3: "We can therefore interpret the Gaussian diffusion model as
+    a kind of autoregressive model with a generalized bit ordering that cannot be
+    expressed by reordering data coordinates."
+    
+    Paper Section 4.3: "Gaussian diffusions can be made shorter for fast sampling
+    or longer for model expressiveness."
+    """
     num_configs = len(samples_list)
     
     fig, axes = plt.subplots(num_configs, num_samples_per_config, figsize=figsize)
@@ -133,7 +156,7 @@ def compare_timesteps(
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
         logger.info(f"comparison saved: {save_path}")
     
-    plt.show()
+    plt.close()
 
 
 def plot_training_curves(
@@ -161,7 +184,7 @@ def plot_training_curves(
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
         logger.info(f"training curves saved: {save_path}")
     
-    plt.show()
+    plt.close()
 
 
 def visualize_noise_prediction(
@@ -200,7 +223,7 @@ def visualize_noise_prediction(
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
         logger.info(f"prediction visualization saved: {save_path}")
     
-    plt.show()
+    plt.close()
 
 
 def create_gif_from_trajectory(
