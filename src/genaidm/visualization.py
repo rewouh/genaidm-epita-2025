@@ -162,22 +162,51 @@ def compare_timesteps(
 def plot_training_curves(
     losses: List[float],
     save_path: Optional[str] = None,
-    figsize: tuple = (10, 5)
+    figsize: tuple = (14, 6)
 ):
-    plt.figure(figsize=figsize)
-    plt.plot(losses, alpha=0.7, linewidth=0.5)
+    plt.style.use('seaborn-v0_8-whitegrid')
+    
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
+    
+    iterations = np.arange(len(losses))
+    
+    ax1.plot(losses, alpha=0.3, color='#1f77b4', label='Perte brute', linewidth=0.5)
     
     window = min(100, len(losses) // 10)
     if window > 1:
         moving_avg = np.convolve(losses, np.ones(window)/window, mode='valid')
-        plt.plot(range(window-1, len(losses)), moving_avg, 
-                linewidth=2, label=f'moving average (window={window})')
-        plt.legend()
+        ax1.plot(iterations[window-1:], moving_avg, 
+                color='#ff7f0e', linewidth=2, label=f'Moyenne mobile ({window})')
     
-    plt.xlabel('iteration')
-    plt.ylabel('mse loss')
-    plt.title('ddpm training curve')
-    plt.grid(True, alpha=0.3)
+    ax1.set_yscale('log')
+    ax1.set_xlabel('Itération')
+    ax1.set_ylabel('MSE Loss (Log Scale)')
+    ax1.set_title('Convergence Globale (Échelle Log)')
+    ax1.legend()
+    ax1.grid(True, which="both", ls="-", alpha=0.2)
+
+    start_idx = int(len(losses) * 0.02) 
+    if start_idx < len(losses):
+        zoom_losses = losses[start_idx:]
+        zoom_iter = iterations[start_idx:]
+        
+        ax2.plot(zoom_iter, zoom_losses, alpha=0.3, color='#1f77b4', linewidth=0.5)
+        
+        if window > 1 and len(moving_avg) > start_idx:
+            ax2.plot(zoom_iter[window-1:], moving_avg[start_idx:], 
+                    color='#ff7f0e', linewidth=2, label='Moyenne mobile')
+            
+        ax2.set_xlabel('Itération')
+        ax2.set_ylabel('MSE Loss (Linear)')
+        ax2.set_title(f'Apprentissage Fin (Zoom après itération {start_idx})')
+        ax2.grid(True, alpha=0.3)
+        
+        if len(zoom_losses) > 0:
+            y_max = np.percentile(zoom_losses, 95)
+            ax2.set_ylim(0, y_max * 1.1)
+
+    plt.suptitle('Dynamique d\'entraînement DDPM', fontsize=16)
+    plt.tight_layout()
     
     if save_path:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
