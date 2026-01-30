@@ -31,18 +31,24 @@ class DDPM:
         schedule: str = "linear"
     ):
         # Paper Section 4: "We set T = 1000 for all experiments"
+        # Number of diffusion steps: more steps = better quality but slower generation
         self.num_timesteps = num_timesteps
         
+        # Beta schedule: controls how much noise is added at each timestep
         if schedule == "linear":
             # Paper Section 4: "We set the forward process variances to constants
             # increasing linearly from β₁ = 10⁻⁴ to βT = 0.02"
+            # Linear schedule: noise increases gradually from start to end
             self.betas = self._linear_schedule(beta_start, beta_end, num_timesteps)
         else:
             raise ValueError(f"schedule {schedule} not supported")
         
         # Paper Eq. (4): Define αₜ := 1 - βₜ and ᾱₜ := ∏ₛ₌₁ᵗ αₛ
+        # Alpha: amount of signal preserved (1 - noise)
         self.alphas = 1.0 - self.betas
+        # Cumulative product: total signal preserved after t steps
         self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
+        # Previous cumulative product: used for reverse process calculations
         self.alphas_cumprod_prev = torch.cat([
             torch.tensor([1.0]),
             self.alphas_cumprod[:-1]
@@ -50,15 +56,17 @@ class DDPM:
         
         # Precompute coefficients for the forward process q(xₜ|x₀)
         # Paper Eq. (4): q(xₜ|x₀) = N(xₜ; √ᾱₜ x₀, (1 - ᾱₜ)I)
+        # These coefficients allow efficient sampling of x_t from x_0
         self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
         self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1.0 - self.alphas_cumprod)
         
         # Precompute coefficients for reverse process
+        # Used in sampling to compute the mean of p(x_{t-1}|x_t)
         self.sqrt_recip_alphas = torch.sqrt(1.0 / self.alphas)
         # Paper Eq. (7): β̃ₜ := (1 - ᾱₜ₋₁)/(1 - ᾱₜ) βₜ
         # Paper Section 3.2: "We set Σ_θ(x_t, t) = σ_t² I to untrained time dependent
         # constants. Experimentally, both σ_t² = β_t and σ_t² = β̃_t had similar results."
-        # This implementation uses β̃_t (posterior_variance)
+        # This implementation uses β̃_t (posterior_variance) for the variance in sampling
         self.posterior_variance = (
             self.betas * (1.0 - self.alphas_cumprod_prev) / (1.0 - self.alphas_cumprod)
         )
@@ -85,21 +93,29 @@ class DDPM:
         noise: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
+        Forward diffusion process: add noise to clean image x_0 at timestep t.
+        
         Paper Eq. (4): "A notable property of the forward process is that it admits
         sampling xₜ at an arbitrary timestep t in closed form"
         q(xₜ|x₀) = N(xₜ; √ᾱₜ x₀, (1 - ᾱₜ)I)
         
         This can be reparameterized as: xₜ(x₀, ε) = √ᾱₜ x₀ + √(1 - ᾱₜ) ε
         where ε ~ N(0, I) (from text below Eq. 9)
+        
+        The formula balances signal (x_0) and noise (ε) based on timestep t:
+        - Early timesteps: more signal, less noise
+        - Late timesteps: less signal, more noise
         """
         if noise is None:
             noise = torch.randn_like(x_0)
         
+        # Extract coefficients for batch of timesteps t
         sqrt_alpha_cumprod_t = self._extract(self.sqrt_alphas_cumprod, t, x_0.shape)
         sqrt_one_minus_alpha_cumprod_t = self._extract(
             self.sqrt_one_minus_alphas_cumprod, t, x_0.shape
         )
         
+        # Reparameterization trick: combine signal and noise
         x_t = sqrt_alpha_cumprod_t * x_0 + sqrt_one_minus_alpha_cumprod_t * noise
         
         return x_t, noise
@@ -112,6 +128,8 @@ class DDPM:
         device: str = "cpu"
     ) -> torch.Tensor:
         """
+        Single denoising step: predict x_{t-1} from x_t.
+        
         Paper Algorithm 2 (Sampling): "The complete sampling procedure"
         Paper Eq. (11): "We may choose the parameterization μ_θ(x_t, t) = 
         1/√α_t (x_t - β_t/√(1-ᾱ_t) ε_θ(x_t, t))"
@@ -119,12 +137,19 @@ class DDPM:
         This implements the sampling step:
         x_{t-1} = 1/√α_t (x_t - β_t/√(1-ᾱ_t) ε_θ(x_t, t)) + σ_t z
         where z ~ N(0, I) if t > 1, else z = 0
+        
+        The process:
+        1. Model predicts the noise ε_θ(x_t, t) that was added
+        2. Remove predicted noise from x_t to get cleaner image
+        3. Add small amount of random noise (except at final step)
         """
         batch_size = x_t.shape[0]
         t_tensor = torch.full((batch_size,), t, device=device, dtype=torch.long)
         
+        # Model predicts the noise that was added at timestep t
         epsilon_theta = model(x_t, t_tensor)
         
+        # Extract schedule coefficients for timestep t
         betas_t = self._extract(self.betas, t_tensor, x_t.shape)
         sqrt_one_minus_alphas_cumprod_t = self._extract(
             self.sqrt_one_minus_alphas_cumprod, t_tensor, x_t.shape
@@ -133,14 +158,16 @@ class DDPM:
             self.sqrt_recip_alphas, t_tensor, x_t.shape
         )
         
-        # Compute the mean using Eq. (11)
+        # Compute the mean using Eq. (11): remove predicted noise
         model_mean = sqrt_recip_alphas_t * (
             x_t - betas_t * epsilon_theta / sqrt_one_minus_alphas_cumprod_t
         )
         
+        # At final step (t=0), return mean without additional noise
         if t == 0:
             return model_mean
         else:
+            # Add stochastic noise: allows for diversity in generated samples
             posterior_variance_t = self._extract(
                 self.posterior_variance, t_tensor, x_t.shape
             )
@@ -190,8 +217,16 @@ class DDPM:
         t: torch.Tensor,
         x_shape: Tuple[int, ...]
     ) -> torch.Tensor:
+        """
+        Extract coefficients for batch of timesteps and reshape for broadcasting.
+        
+        For each timestep t in the batch, extracts the corresponding coefficient
+        from schedule array a, then reshapes to match image dimensions for broadcasting.
+        """
         batch_size = t.shape[0]
+        # Gather coefficients for each timestep in batch
         out = a.to(t.device).gather(0, t)
+        # Reshape to [batch, 1, 1, ...] for broadcasting across spatial dimensions
         return out.reshape(batch_size, *((1,) * (len(x_shape) - 1)))
     
     def compute_loss(
@@ -201,6 +236,8 @@ class DDPM:
         device: str = "cpu"
     ) -> torch.Tensor:
         """
+        Compute training loss: simplified objective that predicts noise.
+        
         Paper Algorithm 1 (Training):
         "1: repeat
          2:   x_0 ~ q(x_0)
@@ -213,17 +250,28 @@ class DDPM:
         
         Paper Section 3.4: "We found it beneficial to sample quality (and simpler to 
         implement) to train on [...] simplified objective"
+        
+        Training process:
+        1. Randomly sample timestep t for each image in batch
+        2. Add noise to clean image x_0 to get noisy image x_t
+        3. Model predicts the noise that was added
+        4. Loss = MSE between predicted and true noise
         """
         batch_size = x_0.shape[0]
         
+        # Sample random timesteps: each image gets a different timestep
         t = torch.randint(0, self.num_timesteps, (batch_size,), device=device).long()
         
+        # Sample random noise
         noise = torch.randn_like(x_0)
         
+        # Forward diffusion: add noise to get x_t
         x_t, _ = self.q_sample(x_0, t, noise)
         
+        # Model predicts the noise
         epsilon_theta = model(x_t, t)
         
+        # Simplified loss: MSE between predicted and true noise
         loss = F.mse_loss(epsilon_theta, noise)
         
         return loss

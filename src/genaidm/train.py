@@ -1,3 +1,18 @@
+"""
+This file handles the training pipeline for DDPM models.
+
+It provides:
+- train_ddpm: main training loop with EMA (Exponential Moving Average) support
+- get_mnist_dataloader: data loading utilities for MNIST dataset
+- generate_samples: sampling function to generate new images from trained model
+- load_checkpoint: utility to load saved model checkpoints
+
+The training process follows the simplified objective from the DDPM paper:
+- Randomly sample timesteps t
+- Add noise to images according to timestep t
+- Train model to predict the added noise
+- Use EMA to stabilize training and improve sample quality
+"""
 
 import torch
 import torch.nn as nn
@@ -35,15 +50,20 @@ def train_ddpm(
     """
     model.to(device)
     # Paper Appendix B: "We tried Adam and RMSProp early on [...] and chose the former"
+    # AdamW optimizer: adaptive learning rate with weight decay
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
     
+    # EMA (Exponential Moving Average): maintains a smoothed version of model weights
+    # This helps stabilize training and often produces better sample quality
     if use_ema:
         from copy import deepcopy
         ema_model = deepcopy(model)
         ema_model.eval()
+        # Freeze EMA model parameters (only update via exponential moving average)
         for param in ema_model.parameters():
             param.requires_grad = False
     
+    # Learning rate scheduler: cosine annealing reduces LR gradually during training
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, 
         T_max=num_epochs * len(dataloader)
@@ -66,18 +86,25 @@ def train_ddpm(
             # {0, 1, ..., 255} scaled linearly to [−1, 1]. This ensures that the neural
             # network reverse process operates on consistently scaled inputs starting
             # from the standard normal prior p(x_T)."
+            # Normalize from [0, 1] to [-1, 1] to match the noise distribution
             images = images * 2 - 1
             
+            # Compute loss: model predicts noise added at random timestep t
             loss = ddpm.compute_loss(model, images, device)
             
+            # Backpropagation: compute gradients
             optimizer.zero_grad()
             loss.backward()
             
+            # Gradient clipping: prevents exploding gradients
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             
+            # Update model weights
             optimizer.step()
             scheduler.step()
             
+            # Update EMA model: exponential moving average of weights
+            # EMA weights = decay * old_EMA + (1 - decay) * current_weights
             if use_ema:
                 with torch.no_grad():
                     for ema_param, param in zip(ema_model.parameters(), model.parameters()):
@@ -167,14 +194,26 @@ def generate_samples(
     return_trajectory: bool = False
 ) -> torch.Tensor:
     """
+    Generate new samples by iteratively denoising random noise.
+    
     Paper Section 4.3 (Progressive generation): "We also run a progressive
     unconditional generation process given by progressive decompression from
     random bits. [...] Large scale image features appear first and details
     appear last."
+    
+    Generation process:
+    1. Start with pure noise x_T ~ N(0, I)
+    2. For t = T, T-1, ..., 1:
+       - Model predicts noise ε_θ(x_t, t)
+       - Remove noise to get x_{t-1}
+    3. Final result is x_0 (clean image)
+    
+    The trajectory option allows visualizing the progressive denoising process.
     """
     model.eval()
     shape = (num_samples, 1, 28, 28)
     
+    # Run reverse diffusion process: T steps of denoising
     samples = ddpm.p_sample_loop(
         model,
         shape,
@@ -182,6 +221,7 @@ def generate_samples(
         return_trajectory=return_trajectory
     )
     
+    # Normalize from [-1, 1] back to [0, 1] for visualization
     if return_trajectory:
         samples = (samples + 1) / 2
     else:

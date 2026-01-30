@@ -1,3 +1,17 @@
+"""
+This file provides visualization utilities for DDPM training and generation.
+
+It includes functions to visualize:
+- Forward trajectory: how images are progressively corrupted with noise
+- Reverse trajectory: how noise is progressively removed to generate images
+- Generated samples: grids of final generated images
+- Training curves: loss evolution during training
+- Noise prediction: comparison of true vs predicted noise
+- Timestep comparisons: effect of different diffusion timestep counts
+
+All visualizations can be saved as images or animated GIFs for analysis.
+"""
+
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
